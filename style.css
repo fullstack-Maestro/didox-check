@@ -140,6 +140,7 @@ input, select {
   padding: 9px 11px;
 }
 .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+#userKeyInfo:empty { display: none; }
 
 .note {
   margin: 0 0 12px;
@@ -151,8 +152,31 @@ input, select {
 }
 .note.warn { border-left-color: var(--nodata-fg); }
 
-.login { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 12px; }
-.login summary { cursor: pointer; font-weight: 600; margin-bottom: 12px; }
+.login { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 12px; display: grid; gap: 12px; }
+.login h3 { margin: 0; }
+.auto-info { min-height: 1.5em; }
+.btn--small { padding: 4px 10px; font-size: .85rem; }
+
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); }
+.tab {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  padding: 8px 12px;
+  font: inherit;
+  cursor: pointer;
+  margin-bottom: -1px;
+}
+.tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+
+.check { display: flex; gap: 8px; align-items: flex-start; font-size: .9rem; cursor: pointer; }
+.check input { width: auto; margin-top: 3px; }
+
+.sub summary { cursor: pointer; font-size: .9rem; color: var(--muted); }
+.sub[open] { display: grid; gap: 8px; }
+.grow { flex: 1; min-width: 0; }
+code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .9em; }
 .ok { color: var(--yes-fg); }
 .bad { color: var(--error-fg); }
 

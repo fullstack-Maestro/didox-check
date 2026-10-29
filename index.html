@@ -62,13 +62,22 @@
         </div>
       </form>
 
-      <!-- Optional: get a user-key by login + password via POST /v1/auth/{taxId}/password/{locale} -->
-      <details class="login">
-        <summary data-i18n="loginTitle">Получить user-key по ИНН/ПИНФЛ и паролю Didox</summary>
-        <form id="loginForm" class="form" autocomplete="off">
+      <!-- Getting a user-key: by password (POST /v1/auth/{id}/password) or by ЭЦП via E-IMZO (POST /v1/auth/{id}/token) -->
+      <section class="login">
+        <h3 data-i18n="loginTitle">Получить user-key автоматически</h3>
+        <div class="row auto-info">
+          <span id="autoLoginInfo" class="small"></span>
+          <button type="button" id="autoLoginOff" class="btn btn--ghost btn--small" data-i18n="autoOff" hidden>Отключить автовход</button>
+        </div>
+
+        <div class="tabs" role="tablist">
+          <button type="button" role="tab" id="tabPassword" class="tab" aria-selected="true" aria-controls="loginForm" data-i18n="tabPassword">Логин и пароль</button>
+          <button type="button" role="tab" id="tabEimzo" class="tab" aria-selected="false" aria-controls="eimzoPanel">E-IMZO (ЭЦП)</button>
+        </div>
+
+        <form id="loginForm" class="form" role="tabpanel" aria-labelledby="tabPassword" autocomplete="off">
           <p class="note warn" data-i18n="loginWarn">
-            Пароль не сохраняется. Внимание: у Didox жёсткая защита от перебора —
-            3 неверные попытки в минуту блокируют вход на 10 минут, 25 — навсегда.
+            Внимание: у Didox жёсткая защита от перебора — 3 неверные попытки в минуту блокируют вход на 10 минут, 25 — навсегда.
           </p>
           <label class="field">
             <span data-i18n="loginTin">Ваш ИНН / ПИНФЛ</span>
@@ -78,12 +87,53 @@
             <span data-i18n="loginPassword">Пароль Didox</span>
             <input id="loginPassword" type="password" autocomplete="off">
           </label>
+          <label class="check">
+            <input type="checkbox" id="loginRemember">
+            <span data-i18n="loginRemember">Запомнить пароль на этом устройстве и входить автоматически, когда токен истекает</span>
+          </label>
+          <p class="muted small" data-i18n="loginRememberNote">
+            Пароль хранится в localStorage браузера в открытом виде. Включайте только на своём личном компьютере.
+            Если автовход получит отказ (неверный пароль, блокировка), пароль сразу удаляется, чтобы не попасть под блокировку.
+          </p>
           <div class="row">
             <button type="submit" class="btn" data-i18n="loginBtn">Получить токен</button>
             <span id="loginMsg" class="small" role="status"></span>
           </div>
         </form>
-      </details>
+
+        <div id="eimzoPanel" class="form" role="tabpanel" aria-labelledby="tabEimzo" hidden>
+          <p class="note" data-i18n="eimzoNote">
+            Нужно установленное и запущенное приложение E-IMZO (e-imzo.uz). Пароль ключа вводится в окне E-IMZO — сайт его не видит.
+          </p>
+          <div class="row">
+            <button type="button" id="eimzoFind" class="btn" data-i18n="eimzoFind">Найти ключи ЭЦП</button>
+            <span id="eimzoMsg" class="small" role="status"></span>
+          </div>
+          <label class="field" id="eimzoKeyField" hidden>
+            <span data-i18n="eimzoKey">Ключ ЭЦП</span>
+            <select id="eimzoKey"></select>
+          </label>
+          <label class="check" id="eimzoRememberRow" hidden>
+            <input type="checkbox" id="eimzoRemember" checked>
+            <span data-i18n="eimzoRemember">Входить этим ключом автоматически, когда токен истекает (откроется окно E-IMZO)</span>
+          </label>
+          <div class="row" id="eimzoLoginRow" hidden>
+            <button type="button" id="eimzoLogin" class="btn" data-i18n="eimzoLogin">Войти с ЭЦП</button>
+          </div>
+          <details class="sub">
+            <summary data-i18n="eimzoDomainTitle">API-ключ E-IMZO для этого сайта</summary>
+            <p class="muted small" data-i18n="eimzoDomainNote">
+              E-IMZO работает только с сайтами, для домена которых выдан API-ключ. Для localhost ключ встроен.
+              Для этого домена ключ нужно получить у разработчиков E-IMZO (e-imzo.uz) и вставить сюда.
+            </p>
+            <p class="small"><span data-i18n="eimzoDomain">Домен:</span> <code id="eimzoDomainName"></code></p>
+            <div class="row">
+              <input id="eimzoDomainKey" spellcheck="false" autocomplete="off" class="grow">
+              <button type="button" id="eimzoDomainKeySave" class="btn" data-i18n="save">Сохранить</button>
+            </div>
+          </details>
+        </div>
+      </section>
     </section>
 
     <!-- ===== Search ===== -->
@@ -107,7 +157,7 @@
     <!-- ===== Status / errors / results ===== -->
     <div id="loading" class="card loading" hidden aria-live="polite">
       <span class="spinner" aria-hidden="true"></span>
-      <span data-i18n="loading">Запрос к API…</span>
+      <span id="loadingText">Запрос к API…</span>
     </div>
 
     <div id="error" class="card error" role="alert" hidden>
@@ -143,6 +193,7 @@
     <span data-i18n="footer">Данные: Didox API, метод GET /v1/utils/info/{ИНН|ПИНФЛ}.</span>
   </footer>
 
+  <script src="eimzo.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

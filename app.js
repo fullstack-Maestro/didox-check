@@ -26,7 +26,18 @@ const CONFIG = {
 
   // Endpoints. {id} = ИНН/ПИНФЛ, {lang} = ru | uz.
   infoPath: '/v1/utils/info/{id}',
-  loginPath: '/v1/auth/{id}/password/{lang}',
+  loginPath: '/v1/auth/{id}/password/{lang}',      // login by password
+  eimzoLoginPath: '/v1/auth/{id}/token/{lang}',    // login by ЭЦП signature
+  timestampPath: '/v1/dsvs/timestamp',             // attaches a timestamp to an E-IMZO signature
+
+  // E-IMZO API keys as [domain, key, ...]. These two are the public keys for local
+  // use from the official e-imzo-client.js. A key for your own domain (e.g.
+  // <login>.github.io) is issued by the E-IMZO developers — add it here or paste
+  // it in the settings panel.
+  eimzoApiKeys: [
+    'localhost', '96D0C1491615C82B9A54D9989779DF825B690748224C2B04F500F370D51827CE2644D8D4A82C18184D73AB8530BB8ED537269603F61DB0D03D2104ABF789970B',
+    '127.0.0.1', 'A7BCFA5D490B351BE0754130DF03A068F855DB4333D43921125B9CF2670EF6A40370C646B90401955E1F7BC9CDBF59CE0B2C5467D820BE189C845D0B79CFC96F',
+  ],
 
   // Auth headers. Only user-key is required for /v1/utils/info;
   // Partner-Authorization is optional and sent only when filled in.
@@ -35,6 +46,7 @@ const CONFIG = {
     user: 'user-key',
   },
   userKeyLifetimeMin: 360,  // user tokens are valid for 360 minutes
+  refreshMarginMin: 5,      // auto-login this many minutes before the token expires
   timeoutMs: 20000,
   historySize: 5,
 
@@ -79,6 +91,8 @@ const CONFIG = {
     partnerToken: 'didox.partnerToken',
     userKey: 'didox.userKey',
     userKeyIssuedAt: 'didox.userKeyIssuedAt',
+    autoLogin: 'didox.autoLogin',          // { method: 'password', id, password } | { method: 'eimzo', serialNumber, loginId, label }
+    eimzoDomainKey: 'didox.eimzoDomainKey',
     history: 'didox.history',
     lang: 'didox.lang',
   },
@@ -99,11 +113,42 @@ const I18N = {
     partnerHint: '(необязательно — партнёрский токен от Didox)',
     userKeyHint: '(токен пользователя, действует 6 часов)',
     save: 'Сохранить',
-    clear: 'Удалить токены',
+    clear: 'Удалить всё сохранённое',
     saved: 'Сохранено',
-    cleared: 'Токены удалены',
-    loginTitle: 'Получить user-key по ИНН/ПИНФЛ и паролю Didox',
-    loginWarn: 'Пароль не сохраняется. Внимание: у Didox жёсткая защита от перебора — 3 неверные попытки в минуту блокируют вход на 10 минут, 25 — навсегда.',
+    cleared: 'Токены и пароль удалены',
+    loginTitle: 'Получить user-key автоматически',
+    loginWarn: 'Внимание: у Didox жёсткая защита от перебора — 3 неверные попытки в минуту блокируют вход на 10 минут, 25 — навсегда.',
+    tabPassword: 'Логин и пароль',
+    loginRemember: 'Запомнить пароль на этом устройстве и входить автоматически, когда токен истекает',
+    loginRememberNote: 'Пароль хранится в localStorage браузера в открытом виде. Включайте только на своём личном компьютере. Если автовход получит отказ (неверный пароль, блокировка), пароль сразу удаляется, чтобы не попасть под блокировку.',
+    autoOff: 'Отключить автовход',
+    autoNone: 'Автовход выключен — user-key нужно получать вручную.',
+    autoPassword: 'Автовход включён: по паролю ({id}).',
+    autoEimzo: 'Автовход включён: ЭЦП {label}.',
+    autoLoginBusy: 'Вход в Didox…',
+    autoLoginEimzoBusy: 'Подтвердите вход в окне E-IMZO…',
+    autoLoginFailed: 'Не удалось войти автоматически',
+    autoLoginDisabled: 'Автовход отключён, сохранённый пароль удалён: {reason}',
+    eimzoNote: 'Нужно установленное и запущенное приложение E-IMZO (e-imzo.uz). Пароль ключа вводится в окне E-IMZO — сайт его не видит.',
+    eimzoFind: 'Найти ключи ЭЦП',
+    eimzoKey: 'Ключ ЭЦП',
+    eimzoRemember: 'Входить этим ключом автоматически, когда токен истекает (откроется окно E-IMZO)',
+    eimzoLogin: 'Войти с ЭЦП',
+    eimzoDomainTitle: 'API-ключ E-IMZO для этого сайта',
+    eimzoDomainNote: 'E-IMZO работает только с сайтами, для домена которых выдан API-ключ. Для localhost ключ встроен. Для этого домена ключ нужно получить у разработчиков E-IMZO (e-imzo.uz) и вставить сюда.',
+    eimzoDomain: 'Домен:',
+    eimzoSearching: 'Подключение к E-IMZO…',
+    eimzoFound: 'Найдено ключей: {n}',
+    eimzoNoKeys: 'E-IMZO не нашёл ключей .pfx. Вставьте флешку с ключом и нажмите «Найти» ещё раз.',
+    eimzoSigning: 'Введите пароль ключа в окне E-IMZO…',
+    eimzoNotRunning: 'E-IMZO не отвечает. Убедитесь, что приложение E-IMZO установлено и запущено (значок в трее), и разрешите браузеру доступ к локальной сети, если он спросит.',
+    eimzoNoApiKey: 'E-IMZO не принимает запросы с домена {host}: для него нет API-ключа. Получите ключ у разработчиков E-IMZO и вставьте его ниже, или откройте сайт локально через localhost (см. README).',
+    eimzoOld: 'Установлена старая версия E-IMZO ({v}). Обновите её на e-imzo.uz.',
+    eimzoTimeout: 'E-IMZO не ответил вовремя. Повторите.',
+    eimzoFailed: 'E-IMZO вернул ошибку: {reason}',
+    eimzoKeyMissing: 'Сохранённый ключ ЭЦП не найден. Вставьте флешку с ключом или выберите ключ заново.',
+    eimzoKeyExpired: 'срок истёк',
+    eimzoTimestampFailed: 'Didox не принял подпись (timestamp).',
     loginTin: 'Ваш ИНН / ПИНФЛ',
     loginPassword: 'Пароль Didox',
     loginBtn: 'Получить токен',
@@ -180,11 +225,42 @@ const I18N = {
     partnerHint: '(ixtiyoriy — Didox hamkorlik tokeni)',
     userKeyHint: '(foydalanuvchi tokeni, 6 soat amal qiladi)',
     save: 'Saqlash',
-    clear: "Tokenlarni o'chirish",
+    clear: "Saqlanganlarni o'chirish",
     saved: 'Saqlandi',
-    cleared: "Tokenlar o'chirildi",
-    loginTitle: "STIR/JSHSHIR va Didox paroli orqali user-key olish",
-    loginWarn: "Parol saqlanmaydi. Diqqat: daqiqasiga 3 ta noto'g'ri urinish kirishni 10 daqiqaga, 25 ta — butunlay bloklaydi.",
+    cleared: "Tokenlar va parol o'chirildi",
+    loginTitle: 'user-key ni avtomatik olish',
+    loginWarn: "Diqqat: daqiqasiga 3 ta noto'g'ri urinish kirishni 10 daqiqaga, 25 ta — butunlay bloklaydi.",
+    tabPassword: 'Login va parol',
+    loginRemember: "Parolni shu qurilmada eslab qolish va token muddati tugaganda avtomatik kirish",
+    loginRememberNote: "Parol brauzer localStorage'ida ochiq holda saqlanadi. Faqat shaxsiy kompyuteringizda yoqing. Avtomatik kirish rad etilsa (noto'g'ri parol, bloklash), parol darhol o'chiriladi.",
+    autoOff: "Avtomatik kirishni o'chirish",
+    autoNone: "Avtomatik kirish o'chirilgan — user-key ni qo'lda olish kerak.",
+    autoPassword: 'Avtomatik kirish yoqilgan: parol orqali ({id}).',
+    autoEimzo: 'Avtomatik kirish yoqilgan: ERI {label}.',
+    autoLoginBusy: 'Didox tizimiga kirilmoqda…',
+    autoLoginEimzoBusy: 'E-IMZO oynasida kirishni tasdiqlang…',
+    autoLoginFailed: "Avtomatik kirib bo'lmadi",
+    autoLoginDisabled: "Avtomatik kirish o'chirildi, saqlangan parol o'chirildi: {reason}",
+    eimzoNote: "E-IMZO ilovasi (e-imzo.uz) o'rnatilgan va ishga tushirilgan bo'lishi kerak. Kalit paroli E-IMZO oynasida kiritiladi — sayt uni ko'rmaydi.",
+    eimzoFind: 'ERI kalitlarini topish',
+    eimzoKey: 'ERI kaliti',
+    eimzoRemember: "Token muddati tugaganda shu kalit bilan avtomatik kirish (E-IMZO oynasi ochiladi)",
+    eimzoLogin: 'ERI bilan kirish',
+    eimzoDomainTitle: 'Bu sayt uchun E-IMZO API kaliti',
+    eimzoDomainNote: "E-IMZO faqat API kaliti berilgan domenlar bilan ishlaydi. localhost uchun kalit o'rnatilgan. Bu domen uchun kalitni E-IMZO ishlab chiquvchilaridan (e-imzo.uz) olib, shu yerga kiriting.",
+    eimzoDomain: 'Domen:',
+    eimzoSearching: 'E-IMZO ga ulanilmoqda…',
+    eimzoFound: 'Topilgan kalitlar: {n}',
+    eimzoNoKeys: "E-IMZO .pfx kalitlarini topmadi. Kalitli fleshkani ulang va qayta «Topish»ni bosing.",
+    eimzoSigning: 'E-IMZO oynasida kalit parolini kiriting…',
+    eimzoNotRunning: "E-IMZO javob bermayapti. E-IMZO ilovasi o'rnatilgan va ishga tushirilganini tekshiring, brauzer so'rasa lokal tarmoqqa ruxsat bering.",
+    eimzoNoApiKey: "E-IMZO {host} domenidan so'rovlarni qabul qilmaydi: API kaliti yo'q. Kalitni E-IMZO ishlab chiquvchilaridan oling yoki saytni localhost orqali oching (README).",
+    eimzoOld: "E-IMZO eski versiyasi o'rnatilgan ({v}). e-imzo.uz saytida yangilang.",
+    eimzoTimeout: "E-IMZO o'z vaqtida javob bermadi. Qayta urinib ko'ring.",
+    eimzoFailed: 'E-IMZO xato qaytardi: {reason}',
+    eimzoKeyMissing: "Saqlangan ERI kaliti topilmadi. Kalitli fleshkani ulang yoki kalitni qaytadan tanlang.",
+    eimzoKeyExpired: 'muddati tugagan',
+    eimzoTimestampFailed: 'Didox imzoni (timestamp) qabul qilmadi.',
     loginTin: 'Sizning STIR / JSHSHIR',
     loginPassword: 'Didox paroli',
     loginBtn: 'Token olish',
@@ -319,6 +395,13 @@ function loadSettingsIntoForm() {
   $('userKey').value = s.userKey;
   $('customUrlField').hidden = $('apiPreset').value !== 'custom';
   renderUserKeyInfo();
+
+  const auto = getAutoLogin();
+  $('loginRemember').checked = auto?.method === 'password';
+  if (auto?.method === 'password' && !$('loginTin').value) $('loginTin').value = auto.id;
+  $('eimzoDomainName').textContent = location.hostname || 'file://';
+  $('eimzoDomainKey').value = store.get(K.eimzoDomainKey, '');
+  renderAutoLoginInfo();
 }
 
 function renderUserKeyInfo() {
@@ -351,10 +434,13 @@ function saveSettings(e) {
 }
 
 function clearTokens() {
-  [K.partnerToken, K.userKey, K.userKeyIssuedAt].forEach(store.remove);
+  [K.partnerToken, K.userKey, K.userKeyIssuedAt, K.autoLogin].forEach(store.remove);
   $('partnerToken').value = '';
   $('userKey').value = '';
+  $('loginPassword').value = '';
+  $('loginRemember').checked = false;
   renderUserKeyInfo();
+  renderAutoLoginInfo();
   flash($('settingsMsg'), t('cleared'));
 }
 
@@ -375,64 +461,323 @@ function isDidoxHost(url) {
 }
 
 /* ------------------------------------------------------------
-   Optional login: POST /v1/auth/{taxId}/password/{locale}
-   Returns { token, taxId, pinfl, name, ... }.
+   Getting a user-key
+   - by password: POST /v1/auth/{id}/password/{lang}  { password }
+   - by ЭЦП:      E-IMZO signs base64(id) → POST /v1/dsvs/timestamp
+                  → POST /v1/auth/{id}/token/{lang}  { signature }
+   Both return { token, ... }. Optionally remembered for auto-login.
    ------------------------------------------------------------ */
-async function login(e) {
+
+/** A login failure with a ready-to-show message. rejected = Didox refused the credentials. */
+class AuthError extends Error {
+  constructor(message, { rejected = false } = {}) {
+    super(message);
+    this.rejected = rejected;
+  }
+}
+
+let autoLoginPromise = null;   // shared while an auto-login is running
+let eimzoKeys = [];            // keys from the last E-IMZO listing
+
+/** API address + partner token as currently typed in the form (falls back to saved). */
+function formApi() {
+  const preset = $('apiPreset').value;
+  const baseUrl = (preset === 'custom' ? $('customUrl').value : CONFIG.apiPresets[preset]) || getSettings().baseUrl;
+  return { baseUrl: baseUrl.trim().replace(/\/+$/, ''), partnerToken: $('partnerToken').value.trim() };
+}
+
+/** POST JSON to Didox; network problems become AuthError with a readable text. */
+async function postJson(api, path, body) {
+  const headers = { 'Content-Type': 'application/json', Accept: 'application/json', 'Accept-Language': lang };
+  if (api.partnerToken) headers[CONFIG.headers.partner] = api.partnerToken;
+  let res;
+  try {
+    res = await fetchWithTimeout(api.baseUrl + path, { method: 'POST', headers, body: JSON.stringify(body) });
+  } catch (err) {
+    const info = await describeFetchError(err, api.baseUrl);
+    throw new AuthError(`${info.title}. ${info.text}`);
+  }
+  const { json, text } = await readBody(res);
+  return { res, json, text, serverMsg: extractMessage(json, text) };
+}
+
+/** Turn a failed auth response into an AuthError. */
+function authFailure(res, serverMsg, id) {
+  let human;
+  if (res.status === 422 && /not registered/i.test(serverMsg)) human = t('loginNotRegistered');
+  else if (res.status === 422) human = t('loginBadPassword');
+  else if (res.status === 423) human = t('loginLocked');
+  else if (res.status === 429) human = serverMsg || t('errRateLimit');
+  else human = describeHttpError(res.status, serverMsg, id).text;
+  const detail = serverMsg && human !== serverMsg ? ` (${serverMsg})` : '';
+  return new AuthError(human + detail, { rejected: res.status >= 400 && res.status < 500 });
+}
+
+function authPath(template, id) {
+  return template.replace('{id}', encodeURIComponent(id)).replace('{lang}', lang);
+}
+
+/** Save a fresh user-key together with its issue time. */
+function storeUserKey(token) {
+  store.set(K.userKey, token);
+  store.set(K.userKeyIssuedAt, Date.now());
+  if ($('userKey')) $('userKey').value = token;
+  renderUserKeyInfo();
+}
+
+async function loginWithPassword(api, id, password) {
+  const { res, json, serverMsg } = await postJson(api, authPath(CONFIG.loginPath, id), { password });
+  if (res.ok && json && json.token) {
+    storeUserKey(json.token);
+    return { name: json.name || json.taxId || json.pinfl || id };
+  }
+  throw authFailure(res, serverMsg, id);
+}
+
+/** Full E-IMZO login with a key object from Eimzo.listKeys(). */
+async function loginWithEimzo(api, key, onStatus = () => {}) {
+  const id = key.loginId;
+  onStatus(t('eimzoSigning'));
+  let signed;
+  try {
+    signed = await Eimzo.sign(key, btoa(id));
+  } catch (e) {
+    throw eimzoAuthError(e);
+  }
+
+  // Didox attaches a timestamp to the signature.
+  const ts = await postJson(api, CONFIG.timestampPath, { pkcs7: signed.pkcs7_64, signatureHex: signed.signature_hex });
+  const stamp = ts.json && ts.json.timeStampTokenB64;
+  if (!ts.res.ok || !stamp) {
+    throw new AuthError(t('eimzoTimestampFailed') + (ts.serverMsg ? ` (${ts.serverMsg})` : ''));
+  }
+
+  const { res, json, serverMsg } = await postJson(api, authPath(CONFIG.eimzoLoginPath, id), { signature: stamp });
+  if (res.ok && json && json.token) {
+    storeUserKey(json.token);
+    return { name: json.name || key.org || key.cn || id };
+  }
+  throw authFailure(res, serverMsg, id);
+}
+
+/** Map an EimzoError to an AuthError with a human message. */
+function eimzoAuthError(e) {
+  if (!(e instanceof EimzoError)) return new AuthError(String(e && e.message || e));
+  switch (e.code) {
+    case 'connect': return new AuthError(t('eimzoNotRunning'));
+    case 'apikey':  return new AuthError(t('eimzoNoApiKey', { host: location.hostname || 'file://' }));
+    case 'version': return new AuthError(t('eimzoOld', { v: e.reason }));
+    case 'timeout': return new AuthError(t('eimzoTimeout'));
+    default:        return new AuthError(t('eimzoFailed', { reason: e.reason || '—' }));
+  }
+}
+
+/** Built-in E-IMZO keys plus the one pasted for the current domain. */
+function eimzoApiKeys() {
+  const keys = [...CONFIG.eimzoApiKeys];
+  const own = store.get(K.eimzoDomainKey, '');
+  if (own && location.hostname) keys.push(location.hostname, own);
+  return keys;
+}
+
+async function eimzoInit() {
+  try {
+    await Eimzo.init(eimzoApiKeys());
+  } catch (e) {
+    throw eimzoAuthError(e);
+  }
+}
+
+function keyLabel(k) {
+  const who = k.org ? `${k.cn} — ${k.org}` : k.cn;
+  return `${who} (${k.loginId})`;
+}
+
+/* ---------- Auto-login ---------- */
+
+function getAutoLogin() {
+  const a = store.get(K.autoLogin, null);
+  return a && (a.method === 'password' || a.method === 'eimzo') ? a : null;
+}
+
+/** True if the saved key is missing or (known to be) about to expire. */
+function userKeyNeedsRefresh(s) {
+  if (!s.userKey) return true;
+  if (!s.userKeyIssuedAt) return false;   // pasted manually — rely on the 401 retry
+  const ttl = (CONFIG.userKeyLifetimeMin - CONFIG.refreshMarginMin) * 60 * 1000;
+  return Date.now() > s.userKeyIssuedAt + ttl;
+}
+
+/**
+ * Get a new user-key with the remembered method. Runs at most one login at a time.
+ * A rejected password is deleted immediately so we never hammer Didox's lockout.
+ */
+function runAutoLogin(onStatus = () => {}) {
+  if (autoLoginPromise) return autoLoginPromise;
+  const cfg = getAutoLogin();
+  if (!cfg) return Promise.reject(new AuthError(t('errNoTokensText')));
+  const s = getSettings();
+  const api = { baseUrl: s.baseUrl, partnerToken: s.partnerToken };
+
+  autoLoginPromise = (async () => {
+    try {
+      if (cfg.method === 'password') {
+        onStatus(t('autoLoginBusy'));
+        return await loginWithPassword(api, cfg.id, cfg.password);
+      }
+      onStatus(t('autoLoginEimzoBusy'));
+      await eimzoInit();
+      let keys;
+      try { keys = await Eimzo.listKeys(); } catch (e) { throw eimzoAuthError(e); }
+      const key = keys.find((k) => k.serialNumber === cfg.serialNumber);
+      if (!key) throw new AuthError(t('eimzoKeyMissing'));
+      return await loginWithEimzo(api, key, onStatus);
+    } catch (e) {
+      if (cfg.method === 'password' && e instanceof AuthError && e.rejected) {
+        store.remove(K.autoLogin);
+        renderAutoLoginInfo();
+        throw new AuthError(t('autoLoginDisabled', { reason: e.message }));
+      }
+      throw e;
+    }
+  })().finally(() => { autoLoginPromise = null; });
+  return autoLoginPromise;
+}
+
+function renderAutoLoginInfo() {
+  const cfg = getAutoLogin();
+  const el = $('autoLoginInfo');
+  el.className = 'small ' + (cfg ? 'ok' : 'muted');
+  if (!cfg) el.textContent = t('autoNone');
+  else if (cfg.method === 'password') el.textContent = t('autoPassword', { id: cfg.id });
+  else el.textContent = t('autoEimzo', { label: cfg.label });
+  $('autoLoginOff').hidden = !cfg;
+}
+
+function disableAutoLogin() {
+  store.remove(K.autoLogin);
+  renderAutoLoginInfo();
+}
+
+/* ---------- Settings panel handlers ---------- */
+
+function setMsg(el, text, kind = '') {
+  el.textContent = text;
+  el.className = 'small' + (kind ? ' ' + kind : '');
+}
+
+/** Save API address / partner token typed in the form before logging in with them. */
+function persistApiFields() {
+  store.set(K.preset, $('apiPreset').value);
+  store.set(K.customUrl, $('customUrl').value.trim());
+  store.set(K.partnerToken, $('partnerToken').value.trim());
+}
+
+async function onPasswordLogin(e) {
   e.preventDefault();
   const msg = $('loginMsg');
-  msg.className = 'small';
-  const btn = e.submitter || $('loginForm').querySelector('button[type="submit"]');
-
-  // Use what is currently typed in the form, even if not saved yet.
-  const partnerToken = $('partnerToken').value.trim();
-  const preset = $('apiPreset').value;
-  const baseUrl = (preset === 'custom' ? $('customUrl').value : CONFIG.apiPresets[preset]).trim().replace(/\/+$/, '');
-  const id = $('loginTin').value.replace(/\s+/g, '');
+  const btn = $('loginForm').querySelector('button[type="submit"]');
+  const id = normalizeId($('loginTin').value);
   const password = $('loginPassword').value;
-
-  if (!/^(\d{9}|\d{14})$/.test(id) || !password) { msg.textContent = t('loginNeedFields'); msg.classList.add('bad'); return; }
+  if (!/^(\d{9}|\d{14})$/.test(id) || !password) { setMsg(msg, t('loginNeedFields'), 'bad'); return; }
 
   btn.disabled = true;
-  msg.textContent = t('loginBusy');
+  setMsg(msg, t('loginBusy'));
   try {
-    const url = baseUrl + CONFIG.loginPath.replace('{id}', encodeURIComponent(id)).replace('{lang}', lang);
-    const headers = { 'Content-Type': 'application/json', Accept: 'application/json' };
-    if (partnerToken) headers[CONFIG.headers.partner] = partnerToken;
-    const res = await fetchWithTimeout(url, { method: 'POST', headers, body: JSON.stringify({ password }) });
-    const { json, text } = await readBody(res);
-
-    if (res.ok && json && json.token) {
-      // Persist the form values together with the new key.
-      store.set(K.preset, preset);
-      store.set(K.customUrl, $('customUrl').value.trim());
-      store.set(K.partnerToken, partnerToken);
-      store.set(K.userKey, json.token);
-      store.set(K.userKeyIssuedAt, Date.now());
-      $('userKey').value = json.token;
-      $('loginPassword').value = '';
-      renderUserKeyInfo();
-      msg.textContent = t('loginOk', { name: json.name || json.taxId || json.pinfl || id });
-      msg.classList.add('ok');
-      return;
-    }
-
-    const serverMsg = extractMessage(json, text);
-    let human;
-    if (res.status === 422 && /not registered/i.test(serverMsg)) human = t('loginNotRegistered');
-    else if (res.status === 422) human = t('loginBadPassword');
-    else if (res.status === 423) human = t('loginLocked');
-    else if (res.status === 429) human = serverMsg || t('errRateLimit');
-    else human = describeHttpError(res.status, serverMsg, id).text;
-    msg.textContent = human + (serverMsg && human !== serverMsg ? ` (${serverMsg})` : '');
-    msg.classList.add('bad');
+    persistApiFields();
+    const r = await loginWithPassword(formApi(), id, password);
+    if ($('loginRemember').checked) store.set(K.autoLogin, { method: 'password', id, password });
+    else if (getAutoLogin()?.method === 'password') disableAutoLogin();
+    $('loginPassword').value = '';
+    renderAutoLoginInfo();
+    setMsg(msg, t('loginOk', { name: r.name }), 'ok');
   } catch (err) {
-    const info = await describeFetchError(err, baseUrl);
-    msg.textContent = `${info.title}. ${info.text}`;
-    msg.classList.add('bad');
+    setMsg(msg, err.message, 'bad');
   } finally {
     btn.disabled = false;
   }
+}
+
+async function onEimzoFind() {
+  const msg = $('eimzoMsg');
+  const btn = $('eimzoFind');
+  btn.disabled = true;
+  setMsg(msg, t('eimzoSearching'));
+  try {
+    await eimzoInit();
+    try { eimzoKeys = await Eimzo.listKeys(); } catch (e) { throw eimzoAuthError(e); }
+    renderEimzoKeys();
+    setMsg(msg, eimzoKeys.length ? t('eimzoFound', { n: eimzoKeys.length }) : t('eimzoNoKeys'), eimzoKeys.length ? 'ok' : 'bad');
+  } catch (err) {
+    eimzoKeys = [];
+    renderEimzoKeys();
+    setMsg(msg, err.message, 'bad');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function renderEimzoKeys() {
+  const sel = $('eimzoKey');
+  sel.replaceChildren();
+  const saved = getAutoLogin();
+  const now = Date.now();
+  eimzoKeys.forEach((k, i) => {
+    const opt = document.createElement('option');
+    opt.value = String(i);
+    const expired = k.validTo && k.validTo.getTime() < now;
+    opt.textContent = keyLabel(k) + (expired ? ` — ${t('eimzoKeyExpired')}` : '');
+    opt.disabled = !!expired;
+    if (saved && saved.method === 'eimzo' && saved.serialNumber === k.serialNumber) opt.selected = true;
+    sel.append(opt);
+  });
+  // Prefer the first usable key if the saved one isn't there.
+  if (sel.selectedOptions[0]?.disabled) {
+    const firstOk = [...sel.options].find((o) => !o.disabled);
+    if (firstOk) firstOk.selected = true;
+  }
+  const has = eimzoKeys.length > 0;
+  $('eimzoKeyField').hidden = !has;
+  $('eimzoRememberRow').hidden = !has;
+  $('eimzoLoginRow').hidden = !has;
+}
+
+async function onEimzoLogin() {
+  const msg = $('eimzoMsg');
+  const btn = $('eimzoLogin');
+  const key = eimzoKeys[Number($('eimzoKey').value)];
+  if (!key) return;
+  btn.disabled = true;
+  try {
+    persistApiFields();
+    await eimzoInit();
+    const r = await loginWithEimzo(formApi(), key, (text) => setMsg(msg, text));
+    if ($('eimzoRemember').checked) {
+      store.set(K.autoLogin, { method: 'eimzo', serialNumber: key.serialNumber, loginId: key.loginId, label: keyLabel(key) });
+    } else if (getAutoLogin()?.method === 'eimzo') {
+      disableAutoLogin();
+    }
+    renderAutoLoginInfo();
+    setMsg(msg, t('loginOk', { name: r.name }), 'ok');
+  } catch (err) {
+    setMsg(msg, err.message, 'bad');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function saveEimzoDomainKey() {
+  const v = $('eimzoDomainKey').value.trim();
+  if (v) store.set(K.eimzoDomainKey, v); else store.remove(K.eimzoDomainKey);
+  flash($('eimzoMsg'), t('saved'));
+}
+
+function selectLoginTab(which) {
+  const eimzo = which === 'eimzo';
+  $('tabPassword').setAttribute('aria-selected', String(!eimzo));
+  $('tabEimzo').setAttribute('aria-selected', String(eimzo));
+  $('loginForm').hidden = eimzo;
+  $('eimzoPanel').hidden = !eimzo;
 }
 
 /* ------------------------------------------------------------
@@ -571,7 +916,9 @@ async function check(rawId) {
   }
 
   // Didox itself needs a user-key; a proxy (custom URL) may hold it server-side.
-  if (isDidoxHost(s.baseUrl) && !s.userKey) {
+  const direct = isDidoxHost(s.baseUrl);
+  const auto = direct ? getAutoLogin() : null;
+  if (direct && !s.userKey && !auto) {
     showError(t('errNoTokens'), t('errNoTokensText'));
     openSettings(true);
     return;
@@ -582,18 +929,42 @@ async function check(rawId) {
   const controller = new AbortController();
   currentRequest = controller;
 
-  const headers = { Accept: 'application/json', 'Accept-Language': lang };
-  if (s.partnerToken) headers[CONFIG.headers.partner] = s.partnerToken;
-  if (s.userKey) headers[CONFIG.headers.user] = s.userKey;
+  const fetchInfo = async () => {
+    const cur = getSettings();
+    const headers = { Accept: 'application/json', 'Accept-Language': lang };
+    if (cur.partnerToken) headers[CONFIG.headers.partner] = cur.partnerToken;
+    if (cur.userKey) headers[CONFIG.headers.user] = cur.userKey;
+    const res = await fetchWithTimeout(url.toString(), { method: 'GET', headers }, controller);
+    return { res, ...(await readBody(res)) };
+  };
+  const autoLogin = async () => {
+    await runAutoLogin((text) => setLoading(true, text));
+    setLoading(true);
+  };
 
   setLoading(true);
   hideError();
   $('result').hidden = true;
 
   try {
-    const res = await fetchWithTimeout(url.toString(), { method: 'GET', headers }, controller);
-    const { json, text } = await readBody(res);
+    // Missing or expiring key + remembered login → get a fresh one first.
+    let loggedIn = false;
+    if (auto && userKeyNeedsRefresh(s)) {
+      await autoLogin();
+      loggedIn = true;
+    }
+    if (controller !== currentRequest) return;
+
+    let { res, json, text } = await fetchInfo();
     if (controller !== currentRequest) return;   // a newer request took over
+
+    // Rejected key (expired early / pasted manually) → log in once and retry.
+    if (res.status === 401 && auto && !loggedIn && getAutoLogin()) {
+      await autoLogin();
+      if (controller !== currentRequest) return;
+      ({ res, json, text } = await fetchInfo());
+      if (controller !== currentRequest) return;
+    }
 
     if (!res.ok) {
       const serverMsg = extractMessage(json, text);
@@ -621,6 +992,11 @@ async function check(rawId) {
     addToHistory(v.id, data.shortName || data.name || '');
   } catch (err) {
     if (controller !== currentRequest) return;   // aborted on purpose by a newer request
+    if (err instanceof AuthError) {
+      showError(t('autoLoginFailed'), err.message);
+      openSettings(true);
+      return;
+    }
     const info = await describeFetchError(err, s.baseUrl);
     showError(info.title, info.text);
   } finally {
@@ -634,7 +1010,8 @@ async function check(rawId) {
 /* ------------------------------------------------------------
    Rendering
    ------------------------------------------------------------ */
-function setLoading(on) {
+function setLoading(on, text = t('loading')) {
+  $('loadingText').textContent = text;
   $('loading').hidden = !on;
   $('checkBtn').disabled = on;
 }
@@ -775,6 +1152,8 @@ function applyLang(newLang) {
   $('jsonToggle').textContent = $('json').hidden ? t('showJson') : t('hideJson');
   updateDetected(false);
   renderUserKeyInfo();
+  renderAutoLoginInfo();
+  if (eimzoKeys.length) renderEimzoKeys();
   if (lastResult && !$('result').hidden) renderResult();
 }
 
@@ -795,7 +1174,13 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   $('settingsForm').addEventListener('submit', saveSettings);
   $('clearSettings').addEventListener('click', clearTokens);
-  $('loginForm').addEventListener('submit', login);
+  $('loginForm').addEventListener('submit', onPasswordLogin);
+  $('autoLoginOff').addEventListener('click', disableAutoLogin);
+  $('tabPassword').addEventListener('click', () => selectLoginTab('password'));
+  $('tabEimzo').addEventListener('click', () => selectLoginTab('eimzo'));
+  $('eimzoFind').addEventListener('click', onEimzoFind);
+  $('eimzoLogin').addEventListener('click', onEimzoLogin);
+  $('eimzoDomainKeySave').addEventListener('click', saveEimzoDomainKey);
 
   $('jsonToggle').addEventListener('click', toggleJson);
   document.querySelectorAll('.lang__btn').forEach((b) => {
@@ -808,7 +1193,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // First visit without tokens → show settings straight away.
   const s = getSettings();
-  if (isDidoxHost(s.baseUrl) && !s.userKey) openSettings(true);
+  if (isDidoxHost(s.baseUrl) && !s.userKey && !getAutoLogin()) openSettings(true);
+  if (getAutoLogin()?.method === 'eimzo') selectLoginTab('eimzo');
 
   $('taxId').focus();
 });
