@@ -18,12 +18,12 @@
 
 ```
 GET https://api-partners.didox.uz/v1/utils/info/{taxIdOrPinfl}
-Partner-Authorization: <PARTNER_TOKEN>
 user-key: <USER_TOKEN>
+Partner-Authorization: <PARTNER_TOKEN>   # необязательно
 Accept-Language: ru | uz
 ```
 
-- **Partner-Authorization** — партнёрский токен. Выдаёт аккаунт-менеджер Didox (<https://t.me/Didox_account>).
+- **Partner-Authorization** — партнёрский токен (выдаёт аккаунт-менеджер Didox, <https://t.me/Didox_account>). В документации он указан как обязательный, но на практике (проверено в октябре 2026) метод `/v1/utils/info` отвечает и с одним `user-key`. Поэтому на сайте это поле необязательное: если заполнено — заголовок отправляется, если пусто — нет.
 - **user-key** — токен пользователя, действует **360 минут**. Получается методом `POST /v1/auth/{ИНН|ПИНФЛ}/password/{ru|uz}` с телом `{"password": "..."}` (или по ЭЦП). На сайте есть форма «Получить user-key по ИНН/ПИНФЛ и паролю» — она делает именно этот запрос.
 - Тестовый сервер: `https://testapi3.didox.uz`.
 
@@ -60,7 +60,7 @@ CORS: на момент написания Didox отвечает `Access-Contro
 
 1. Откройте сайт → **⚙ Настройки** (при первом визите открываются автоматически).
 2. Выберите API-адрес: боевой `api-partners.didox.uz`, тестовый `testapi3.didox.uz` или свой (прокси).
-3. Вставьте **Partner-Authorization**.
+3. **Partner-Authorization** — по желанию (можно оставить пустым).
 4. Вставьте **user-key** — или раскройте «Получить user-key по ИНН/ПИНФЛ и паролю», введите свой ИНН/ПИНФЛ и пароль Didox. Пароль не сохраняется; полученный токен сохраняется вместе со временем окончания (6 часов).
    > Didox жёстко ограничивает неверные попытки входа: 3 в минуту → блок на 10 мин, 10 → на сутки, 25 → **постоянная блокировка**. Будьте внимательны с паролем.
 5. **Сохранить**. Токены хранятся только в `localStorage` этого браузера и отправляются только на выбранный API-адрес. Кнопка «Удалить токены» стирает их.
@@ -91,7 +91,7 @@ python3 -m http.server 8000
 | Ситуация | Что видит пользователь |
 |---|---|
 | Неверный ввод | «Допустимы только цифры» / «Неверная длина…» — запрос не отправляется |
-| Нет токенов | «Не указаны токены», открываются настройки |
+| Нет user-key | «Не указан user-key», открываются настройки |
 | 401 `No user key or partner token passed` | «Не переданы токены» |
 | 401 `Invalid user key` | «Токен пользователя недействителен» (истёк — получите новый) |
 | 403 / прочие 401 | Ошибка авторизации / доступ запрещён (партнёрский токен) |
@@ -118,7 +118,7 @@ python3 -m http.server 8000
 
 1. Зарегистрируйтесь на <https://dash.cloudflare.com> → **Workers & Pages → Create → Create Worker** → назовите `didox-proxy` → **Deploy** → **Edit code**, вставьте код ниже → **Deploy**.
 2. **Settings → Variables and Secrets** — добавьте (тип *Secret* для токенов и пароля):
-   - `PARTNER_TOKEN` — партнёрский токен Didox
+   - `PARTNER_TOKEN` — партнёрский токен Didox (необязательно)
    - `DIDOX_LOGIN` — ИНН/ПИНФЛ учётной записи Didox
    - `DIDOX_PASSWORD` — пароль Didox
    - `ALLOWED_ORIGIN` — `https://<ваш-логин>.github.io` (тип *Text*)
@@ -165,7 +165,7 @@ export default {
 
     const callDidox = async (userKey) => fetch(`${base}/v1/utils/info/${m[1]}`, {
       headers: {
-        'Partner-Authorization': env.PARTNER_TOKEN,
+        ...partnerHeader(env),
         'user-key': userKey,
         'Accept': 'application/json',
         'Accept-Language': lang,
@@ -199,7 +199,7 @@ async function getUserKey(env, base) {
 
   const res = await fetch(`${base}/v1/auth/${env.DIDOX_LOGIN}/password/ru`, {
     method: 'POST',
-    headers: { 'Partner-Authorization': env.PARTNER_TOKEN, 'Content-Type': 'application/json', 'Accept': 'application/json' },
+    headers: { ...partnerHeader(env), 'Content-Type': 'application/json', 'Accept': 'application/json' },
     body: JSON.stringify({ password: env.DIDOX_PASSWORD }),
   });
   const data = await res.json().catch(() => null);
@@ -210,6 +210,11 @@ async function getUserKey(env, base) {
   cachedKey = data.token;
   cachedUntil = now + KEY_TTL_MS;
   return cachedKey;
+}
+
+// Partner-Authorization отправляем, только если секрет задан.
+function partnerHeader(env) {
+  return env.PARTNER_TOKEN ? { 'Partner-Authorization': env.PARTNER_TOKEN } : {};
 }
 
 function text(msg, status, headers) {

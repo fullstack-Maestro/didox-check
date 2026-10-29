@@ -28,7 +28,8 @@ const CONFIG = {
   infoPath: '/v1/utils/info/{id}',
   loginPath: '/v1/auth/{id}/password/{lang}',
 
-  // Auth headers required by Didox.
+  // Auth headers. Only user-key is required for /v1/utils/info;
+  // Partner-Authorization is optional and sent only when filled in.
   headers: {
     partner: 'Partner-Authorization',
     user: 'user-key',
@@ -95,7 +96,7 @@ const I18N = {
     apiUrl: 'API-адрес',
     customUrl: 'Свой адрес (прокси)',
     customUrlLabel: 'Свой адрес, например Cloudflare Worker',
-    partnerHint: '(партнёрский токен от Didox)',
+    partnerHint: '(необязательно — партнёрский токен от Didox)',
     userKeyHint: '(токен пользователя, действует 6 часов)',
     save: 'Сохранить',
     clear: 'Удалить токены',
@@ -108,7 +109,6 @@ const I18N = {
     loginBtn: 'Получить токен',
     loginBusy: 'Вход…',
     loginOk: 'Готово: user-key получен и сохранён ({name}).',
-    loginNeedPartner: 'Сначала укажите Partner-Authorization.',
     loginNeedFields: 'Введите ИНН/ПИНФЛ (9 или 14 цифр) и пароль.',
     loginBadPassword: 'Неверный ИНН/ПИНФЛ или пароль.',
     loginNotRegistered: 'Пользователь не зарегистрирован в Didox.',
@@ -135,14 +135,14 @@ const I18N = {
     errLength: 'Неверная длина: {n} цифр. Нужно 9 (ИНН) или 14 (ПИНФЛ).',
     typing: 'Введено цифр: {n}',
     errTitle: 'Ошибка',
-    errNoTokens: 'Не указаны токены',
-    errNoTokensText: 'Откройте «Настройки» и вставьте Partner-Authorization и user-key (или получите user-key по паролю).',
+    errNoTokens: 'Не указан user-key',
+    errNoTokensText: 'Откройте «Настройки» и вставьте user-key (или получите его по ИНН/ПИНФЛ и паролю).',
     errBadUrl: 'Неверный API-адрес',
     errBadUrlText: 'Укажите корректный адрес вида https://… в настройках.',
     errNotFound: 'Контрагент не найден',
     errNotFoundText: 'По ИНН/ПИНФЛ {id} данных нет. Проверьте номер; если он верный — повторите позже (источник данных — информационные системы НК).',
     errAuthMissing: 'Не переданы токены',
-    errAuthMissingText: 'API не получил Partner-Authorization и/или user-key. Проверьте настройки.',
+    errAuthMissingText: 'API не получил user-key. Проверьте настройки.',
     errAuthExpired: 'Токен пользователя недействителен',
     errAuthExpiredText: 'user-key истёк (действует 6 часов) или неверен. Получите новый в «Настройках».',
     errAuth: 'Ошибка авторизации',
@@ -177,7 +177,7 @@ const I18N = {
     apiUrl: 'API manzili',
     customUrl: "O'z manzilingiz (proksi)",
     customUrlLabel: "O'z manzilingiz, masalan Cloudflare Worker",
-    partnerHint: '(Didox hamkorlik tokeni)',
+    partnerHint: '(ixtiyoriy — Didox hamkorlik tokeni)',
     userKeyHint: '(foydalanuvchi tokeni, 6 soat amal qiladi)',
     save: 'Saqlash',
     clear: "Tokenlarni o'chirish",
@@ -190,7 +190,6 @@ const I18N = {
     loginBtn: 'Token olish',
     loginBusy: 'Kirilmoqda…',
     loginOk: 'Tayyor: user-key olindi va saqlandi ({name}).',
-    loginNeedPartner: "Avval Partner-Authorization ni kiriting.",
     loginNeedFields: 'STIR/JSHSHIR (9 yoki 14 raqam) va parolni kiriting.',
     loginBadPassword: "STIR/JSHSHIR yoki parol noto'g'ri.",
     loginNotRegistered: "Foydalanuvchi Didox'da ro'yxatdan o'tmagan.",
@@ -217,14 +216,14 @@ const I18N = {
     errLength: "Uzunlik noto'g'ri: {n} raqam. 9 (STIR) yoki 14 (JSHSHIR) bo'lishi kerak.",
     typing: 'Kiritilgan raqamlar: {n}',
     errTitle: 'Xato',
-    errNoTokens: "Tokenlar ko'rsatilmagan",
-    errNoTokensText: "«Sozlamalar»ni oching va Partner-Authorization hamda user-key ni kiriting (yoki user-key ni parol orqali oling).",
+    errNoTokens: "user-key ko'rsatilmagan",
+    errNoTokensText: "«Sozlamalar»ni oching va user-key ni kiriting (yoki uni STIR/JSHSHIR va parol orqali oling).",
     errBadUrl: "API manzili noto'g'ri",
     errBadUrlText: "Sozlamalarda https://… ko'rinishidagi to'g'ri manzilni kiriting.",
     errNotFound: 'Kontragent topilmadi',
     errNotFoundText: "{id} bo'yicha ma'lumot yo'q. Raqamni tekshiring; agar to'g'ri bo'lsa — keyinroq qayta urinib ko'ring.",
     errAuthMissing: 'Tokenlar yuborilmadi',
-    errAuthMissingText: 'API Partner-Authorization va/yoki user-key ni olmadi. Sozlamalarni tekshiring.',
+    errAuthMissingText: 'API user-key ni olmadi. Sozlamalarni tekshiring.',
     errAuthExpired: 'Foydalanuvchi tokeni yaroqsiz',
     errAuthExpiredText: "user-key muddati tugagan (6 soat) yoki noto'g'ri. «Sozlamalar»da yangisini oling.",
     errAuth: 'Avtorizatsiya xatosi',
@@ -392,7 +391,6 @@ async function login(e) {
   const id = $('loginTin').value.replace(/\s+/g, '');
   const password = $('loginPassword').value;
 
-  if (!partnerToken && isDidoxHost(baseUrl)) { msg.textContent = t('loginNeedPartner'); msg.classList.add('bad'); return; }
   if (!/^(\d{9}|\d{14})$/.test(id) || !password) { msg.textContent = t('loginNeedFields'); msg.classList.add('bad'); return; }
 
   btn.disabled = true;
@@ -572,8 +570,8 @@ async function check(rawId) {
     return;
   }
 
-  // Didox itself needs both tokens; a proxy (custom URL) may hold them server-side.
-  if (isDidoxHost(s.baseUrl) && (!s.partnerToken || !s.userKey)) {
+  // Didox itself needs a user-key; a proxy (custom URL) may hold it server-side.
+  if (isDidoxHost(s.baseUrl) && !s.userKey) {
     showError(t('errNoTokens'), t('errNoTokensText'));
     openSettings(true);
     return;
@@ -810,7 +808,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // First visit without tokens → show settings straight away.
   const s = getSettings();
-  if (isDidoxHost(s.baseUrl) && (!s.partnerToken || !s.userKey)) openSettings(true);
+  if (isDidoxHost(s.baseUrl) && !s.userKey) openSettings(true);
 
   $('taxId').focus();
 });
