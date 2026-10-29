@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="referrer" content="no-referrer">
+  <title>Проверка контрагента — Didox</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="wrap topbar__inner">
+      <h1 class="brand" data-i18n="title">Проверка контрагента</h1>
+      <div class="topbar__actions">
+        <div class="lang" role="group" aria-label="Язык / Til">
+          <button type="button" class="lang__btn" data-lang="ru" aria-pressed="true">RU</button>
+          <button type="button" class="lang__btn" data-lang="uz" aria-pressed="false">UZ</button>
+        </div>
+        <button type="button" id="settingsToggle" class="btn btn--ghost" aria-expanded="false" aria-controls="settings">
+          <span aria-hidden="true">⚙</span> <span data-i18n="settings">Настройки</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <!-- ===== Settings: API URL and tokens (stored only in this browser) ===== -->
+    <section id="settings" class="card settings" hidden>
+      <h2 data-i18n="settingsTitle">Настройки API</h2>
+      <p class="note" data-i18n="securityNote">
+        Токены хранятся только в localStorage этого браузера и отправляются только на указанный API-адрес.
+        Сайт статический — на сервере ничего не сохраняется. Не используйте эту страницу на чужом компьютере.
+      </p>
+
+      <form id="settingsForm" class="form" autocomplete="off">
+        <label class="field">
+          <span data-i18n="apiUrl">API-адрес</span>
+          <select id="apiPreset">
+            <option value="prod">api-partners.didox.uz (боевой)</option>
+            <option value="test">testapi3.didox.uz (тестовый)</option>
+            <option value="custom" data-i18n="customUrl">Свой адрес (прокси)</option>
+          </select>
+        </label>
+        <label class="field" id="customUrlField" hidden>
+          <span data-i18n="customUrlLabel">Свой адрес, например Cloudflare Worker</span>
+          <input id="customUrl" type="url" placeholder="https://didox-proxy.example.workers.dev" spellcheck="false">
+        </label>
+        <label class="field">
+          <span>Partner-Authorization <small data-i18n="partnerHint">(партнёрский токен от Didox)</small></span>
+          <input id="partnerToken" type="password" spellcheck="false" autocomplete="off">
+        </label>
+        <label class="field">
+          <span>user-key <small data-i18n="userKeyHint">(токен пользователя, действует 6 часов)</small></span>
+          <input id="userKey" type="password" spellcheck="false" autocomplete="off">
+        </label>
+        <p id="userKeyInfo" class="muted small"></p>
+        <div class="row">
+          <button type="submit" class="btn" data-i18n="save">Сохранить</button>
+          <button type="button" id="clearSettings" class="btn btn--ghost" data-i18n="clear">Удалить токены</button>
+          <span id="settingsMsg" class="muted small" role="status"></span>
+        </div>
+      </form>
+
+      <!-- Optional: get a user-key by login + password via POST /v1/auth/{taxId}/password/{locale} -->
+      <details class="login">
+        <summary data-i18n="loginTitle">Получить user-key по ИНН/ПИНФЛ и паролю Didox</summary>
+        <form id="loginForm" class="form" autocomplete="off">
+          <p class="note warn" data-i18n="loginWarn">
+            Пароль не сохраняется. Внимание: у Didox жёсткая защита от перебора —
+            3 неверные попытки в минуту блокируют вход на 10 минут, 25 — навсегда.
+          </p>
+          <label class="field">
+            <span data-i18n="loginTin">Ваш ИНН / ПИНФЛ</span>
+            <input id="loginTin" inputmode="numeric" maxlength="14" spellcheck="false">
+          </label>
+          <label class="field">
+            <span data-i18n="loginPassword">Пароль Didox</span>
+            <input id="loginPassword" type="password" autocomplete="off">
+          </label>
+          <div class="row">
+            <button type="submit" class="btn" data-i18n="loginBtn">Получить токен</button>
+            <span id="loginMsg" class="small" role="status"></span>
+          </div>
+        </form>
+      </details>
+    </section>
+
+    <!-- ===== Search ===== -->
+    <section class="card">
+      <form id="searchForm" class="search" novalidate>
+        <label for="taxId" class="search__label" data-i18n="inputLabel">ИНН (9 цифр) или ПИНФЛ (14 цифр)</label>
+        <div class="search__row">
+          <input id="taxId" class="search__input" inputmode="numeric" autocomplete="off"
+                 maxlength="20" placeholder="123456789" aria-describedby="detected">
+          <button id="checkBtn" type="submit" class="btn btn--primary" data-i18n="check">Проверить</button>
+        </div>
+        <p id="detected" class="detected" aria-live="polite"></p>
+      </form>
+
+      <div id="history" class="history" hidden>
+        <span class="muted small" data-i18n="recent">Недавние:</span>
+        <ul id="historyList" class="history__list"></ul>
+      </div>
+    </section>
+
+    <!-- ===== Status / errors / results ===== -->
+    <div id="loading" class="card loading" hidden aria-live="polite">
+      <span class="spinner" aria-hidden="true"></span>
+      <span data-i18n="loading">Запрос к API…</span>
+    </div>
+
+    <div id="error" class="card error" role="alert" hidden>
+      <strong id="errorTitle"></strong>
+      <p id="errorText"></p>
+    </div>
+
+    <section id="result" hidden>
+      <div class="card">
+        <h2 id="resName" class="res-name"></h2>
+        <p id="resSub" class="muted"></p>
+      </div>
+
+      <div class="status-grid" id="statusGrid"></div>
+      <p class="muted small" data-i18n="serviceFieldsNote">
+        Поля isItd и VATRegSimplified в документации Didox помечены как служебные и могут измениться без уведомления.
+      </p>
+
+      <div class="card">
+        <h3 data-i18n="details">Сведения</h3>
+        <dl id="details" class="details"></dl>
+      </div>
+
+      <div class="card">
+        <button type="button" id="jsonToggle" class="btn btn--ghost" aria-expanded="false" aria-controls="json"
+                data-i18n="showJson">Показать JSON</button>
+        <pre id="json" class="json" hidden></pre>
+      </div>
+    </section>
+  </main>
+
+  <footer class="wrap footer muted small">
+    <span data-i18n="footer">Данные: Didox API, метод GET /v1/utils/info/{ИНН|ПИНФЛ}.</span>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
