@@ -83,7 +83,9 @@ const Eimzo = (() => {
     }
     if (!data || data.success !== true) {
       const reason = (data && data.reason) || '';
-      throw new EimzoError(apiKeyRejected ? 'apikey' : 'failed', reason);
+      // E-IMZO may accept "apikey" yet refuse plugins: "API-key для домена … недействителен".
+      const keyProblem = apiKeyRejected || /api-?key/i.test(reason);
+      throw new EimzoError(keyProblem ? 'apikey' : 'failed', reason);
     }
     return data;
   }
