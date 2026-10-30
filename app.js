@@ -38,6 +38,7 @@ const CONFIG = {
     'localhost', '96D0C1491615C82B9A54D9989779DF825B690748224C2B04F500F370D51827CE2644D8D4A82C18184D73AB8530BB8ED537269603F61DB0D03D2104ABF789970B',
     '127.0.0.1', 'A7BCFA5D490B351BE0754130DF03A068F855DB4333D43921125B9CF2670EF6A40370C646B90401955E1F7BC9CDBF59CE0B2C5467D820BE189C845D0B79CFC96F',
   ],
+  eimzoLocalUrl: 'http://localhost:8000/',   // suggested when this domain has no E-IMZO key
 
   // Auth headers. Only user-key is required for /v1/utils/info;
   // Partner-Authorization is optional and sent only when filled in.
@@ -143,6 +144,7 @@ const I18N = {
     eimzoSigning: 'Введите пароль ключа в окне E-IMZO…',
     eimzoNotRunning: 'E-IMZO не отвечает. Убедитесь, что приложение E-IMZO установлено и запущено (значок в трее), и разрешите браузеру доступ к локальной сети, если он спросит.',
     eimzoNoApiKey: 'E-IMZO не принимает запросы с домена {host}: для него нет API-ключа. Получите ключ у разработчиков E-IMZO и вставьте его ниже, или откройте сайт локально через localhost (см. README).',
+    eimzoNoKeyWarn: 'Для домена {host} нет API-ключа E-IMZO, поэтому вход по ЭЦП здесь не сработает. Войдите по паролю, вставьте API-ключ домена ниже или запустите сайт локально (python3 -m http.server 8000) и откройте:',
     eimzoOld: 'Установлена старая версия E-IMZO ({v}). Обновите её на e-imzo.uz.',
     eimzoTimeout: 'E-IMZO не ответил вовремя. Повторите.',
     eimzoFailed: 'E-IMZO вернул ошибку: {reason}',
@@ -255,6 +257,7 @@ const I18N = {
     eimzoSigning: 'E-IMZO oynasida kalit parolini kiriting…',
     eimzoNotRunning: "E-IMZO javob bermayapti. E-IMZO ilovasi o'rnatilgan va ishga tushirilganini tekshiring, brauzer so'rasa lokal tarmoqqa ruxsat bering.",
     eimzoNoApiKey: "E-IMZO {host} domenidan so'rovlarni qabul qilmaydi: API kaliti yo'q. Kalitni E-IMZO ishlab chiquvchilaridan oling yoki saytni localhost orqali oching (README).",
+    eimzoNoKeyWarn: "{host} domeni uchun E-IMZO API kaliti yo'q, shuning uchun bu yerda ERI bilan kirish ishlamaydi. Parol bilan kiring, domen API kalitini quyida kiriting yoki saytni lokal ishga tushiring (python3 -m http.server 8000) va oching:",
     eimzoOld: "E-IMZO eski versiyasi o'rnatilgan ({v}). e-imzo.uz saytida yangilang.",
     eimzoTimeout: "E-IMZO o'z vaqtida javob bermadi. Qayta urinib ko'ring.",
     eimzoFailed: 'E-IMZO xato qaytardi: {reason}',
@@ -580,6 +583,24 @@ function eimzoApiKeys() {
   return keys;
 }
 
+/** True if E-IMZO has a key for the current domain (built-in or pasted). */
+function eimzoHasDomainKey() {
+  const keys = eimzoApiKeys();
+  for (let i = 0; i < keys.length; i += 2) if (keys[i] === location.hostname && keys[i + 1]) return true;
+  return false;
+}
+
+/** Warn on the E-IMZO tab before the user tries a login that cannot work here. */
+function renderEimzoDomainWarn() {
+  const el = $('eimzoNoKeyWarn');
+  el.hidden = eimzoHasDomainKey();
+  if (el.hidden) return;
+  const link = document.createElement('a');
+  link.href = CONFIG.eimzoLocalUrl;
+  link.textContent = CONFIG.eimzoLocalUrl;
+  el.replaceChildren(t('eimzoNoKeyWarn', { host: location.hostname || 'file://' }) + ' ', link);
+}
+
 async function eimzoInit() {
   try {
     await Eimzo.init(eimzoApiKeys());
@@ -769,6 +790,7 @@ async function onEimzoLogin() {
 function saveEimzoDomainKey() {
   const v = $('eimzoDomainKey').value.trim();
   if (v) store.set(K.eimzoDomainKey, v); else store.remove(K.eimzoDomainKey);
+  renderEimzoDomainWarn();
   flash($('eimzoMsg'), t('saved'));
 }
 
@@ -1153,6 +1175,7 @@ function applyLang(newLang) {
   updateDetected(false);
   renderUserKeyInfo();
   renderAutoLoginInfo();
+  renderEimzoDomainWarn();
   if (eimzoKeys.length) renderEimzoKeys();
   if (lastResult && !$('result').hidden) renderResult();
 }
