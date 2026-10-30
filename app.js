@@ -565,7 +565,7 @@ function eimzoAuthError(e) {
   if (!(e instanceof EimzoError)) return new AuthError(String(e && e.message || e));
   switch (e.code) {
     case 'connect': return new AuthError(t('eimzoNotRunning'));
-    case 'apikey':  return new AuthError(t('eimzoNoApiKey', { host: location.hostname || 'file://' }));
+    case 'apikey':  return new AuthError(t('eimzoNoApiKey', { host: location.hostname || 'file://' }) + (e.reason ? ` (E-IMZO: ${e.reason})` : ''));
     case 'version': return new AuthError(t('eimzoOld', { v: e.reason }));
     case 'timeout': return new AuthError(t('eimzoTimeout'));
     default:        return new AuthError(t('eimzoFailed', { reason: e.reason || '—' }));

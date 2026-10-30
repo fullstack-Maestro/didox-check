@@ -58,6 +58,7 @@ const Eimzo = (() => {
       ws.onmessage = (ev) => {
         let data;
         try { data = JSON.parse(ev.data); } catch { finish(new EimzoError('failed', 'bad response')); return; }
+        console.info('E-IMZO', message.name, data && data.success, (data && data.reason) || '');
         finish(null, data);
       };
       // Not running / blocked by the browser → error + close before any message.
