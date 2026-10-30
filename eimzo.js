@@ -6,9 +6,9 @@
    to it over a WebSocket; one message per connection, like the
    official e-imzo.js (github.com/qo0p/e-imzo-doc).
 
-   E-IMZO only answers pages whose domain has an API key. Public
-   keys exist for localhost / 127.0.0.1; any other domain (e.g.
-   *.github.io) needs its own key from the E-IMZO developers.
+   Pages may send E-IMZO an API key for their domain (public keys
+   exist for localhost / 127.0.0.1). The Didox flow works without
+   it, so a rejected key only matters if the plugin calls fail too.
    ============================================================ */
 
 'use strict';
@@ -66,17 +66,29 @@ const Eimzo = (() => {
     });
   }
 
+  // Set when E-IMZO turned down our "apikey" call; used to explain later failures.
+  let apiKeyRejected = false;
+
   /** Call a plugin function; throw EimzoError('failed') when success is false. */
   async function plugin(pluginName, name, args, timeoutMs) {
     const msg = { plugin: pluginName, name };
     if (args) msg.arguments = args;
-    const data = await call(msg, timeoutMs);
-    if (!data || data.success !== true) throw new EimzoError('failed', (data && data.reason) || '');
+    let data;
+    try {
+      data = await call(msg, timeoutMs);
+    } catch (e) {
+      if (apiKeyRejected && e.code === 'connect') throw new EimzoError('apikey');
+      throw e;
+    }
+    if (!data || data.success !== true) {
+      const reason = (data && data.reason) || '';
+      throw new EimzoError(apiKeyRejected ? 'apikey' : 'failed', reason);
+    }
     return data;
   }
 
   /**
-   * Check that E-IMZO runs, is recent enough, and accepts this domain.
+   * Check that E-IMZO runs and is recent enough; offer it the domain API keys.
    * apiKeys: flat array [domain, key, domain, key, ...].
    */
   async function init(apiKeys) {
@@ -85,14 +97,15 @@ const Eimzo = (() => {
     const version = parseInt(v.major, 10) * 100 + parseInt(v.minor, 10);
     if (!(version >= MIN_VERSION)) throw new EimzoError('version', `${v.major}.${v.minor}`);
 
-    // E-IMZO answered "version", so a failure here means the domain key was rejected.
-    let res;
+    // Best effort: the Didox flow (api-docs.didox.uz/ru/integrators-eimzo) skips
+    // "apikey" and calls the plugins directly, so a rejection is not fatal here.
+    // If E-IMZO really refuses this domain, the plugin calls fail and say so.
     try {
-      res = await call({ name: 'apikey', arguments: apiKeys });
-    } catch (e) {
-      throw new EimzoError('apikey', e.reason || '');
+      const res = await call({ name: 'apikey', arguments: apiKeys });
+      apiKeyRejected = !res || res.success !== true;
+    } catch {
+      apiKeyRejected = true;
     }
-    if (!res || res.success !== true) throw new EimzoError('apikey', (res && res.reason) || '');
     return `${v.major}.${v.minor}`;
   }
 
